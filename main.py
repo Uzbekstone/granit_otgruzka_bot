@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import re
-import json
 import random
 import string
 from datetime import datetime, timedelta
@@ -50,8 +49,8 @@ def health():
 
 # ===== Aiogram =====
 bot = Bot(
-    token=settings.TELEGRAM_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        token=settings.TELEGRAM_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
 dp = Dispatcher()
 router = Router()
@@ -254,9 +253,7 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
                 ws_ph.append_row(["order_id", "file1", "file2", "file3", "file4"])
             ws_ph.append_row(p_row)
 
-            # === 3) Otgruzka (Hisobot) — foydalanuvchi ko‘rinishi ===
-            # Tartib: Sana | Granit turi | Kvadrati | Paddon soni | Qayerga ketyapti |
-            #         Haydovchi raqami | Foto surat | Yetkazish summasi | Kim yukladi
+            # 3) Otgruzka (Hisobot) — foydalanuvchi ko‘rinishi
             VIEW_SHEET_TITLE = "Otgruzka (Hisobot)"
             desired_header = [
                 "Sana",
@@ -269,14 +266,11 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
                 "Yetkazish summasi",
                 "Kim yukladi",
             ]
-
             try:
                 ws_view = sheets_instance.sh.worksheet(VIEW_SHEET_TITLE)
             except Exception:
                 ws_view = sheets_instance.sh.add_worksheet(title=VIEW_SHEET_TITLE, rows=1, cols=20)
                 ws_view.append_row(desired_header)
-
-            # birinchi qatordagi sarlavhani tekshirib, kerak bo‘lsa to‘g‘rilab qo‘yamiz
             try:
                 first_row = ws_view.row_values(1)
                 if first_row != desired_header:
@@ -286,15 +280,14 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
                 pass
 
             photo_cell = " ".join([fid for fid in file_ids if fid])
-
             view_row = [
-                data.get("ts"),             # Sana (mahalliy tz)
+                data.get("ts"),             # Sana
                 data.get("type_size"),      # Granit turi
                 data.get("qty"),            # Kvadrati/uzunligi
                 str(data.get("pallets")),   # Paddon soni
                 data.get("dest"),           # Qayerga ketyapti
                 data.get("driver"),         # Haydovchi raqami
-                photo_cell,                 # Foto file_id lar bitta katakda
+                photo_cell,                 # Foto file_id lar
                 data.get("price"),          # Yetkazish summasi
                 data.get("loader"),         # Kim yukladi
             ]
@@ -341,16 +334,18 @@ async def _report_text(days: int) -> str:
 
 async def _report_summary_for(date_str: str) -> str:
     """
-    Bugungi hisobot: faqat Zakazlar/Poddon/Hajm yig‘indi
-    va har bir zakaz alohida: Sana, Soat, granit turi, kvadrati, poddon.
+    HISOBOT ENDI "Otgruzka (Hisobot)" varagidan olinadi.
+    Sarlavha: Zakazlar / Poddon / Hajm yig‘indi
+    Satrlarda: Sana, Soat, Granit turi, Kvadrati, Poddon.
     """
     if not (Sheets and SHEETS_SPREADSHEET_ID and sheets_instance):
         return "⚠️ Sheets ulanmagan. Hisobot uchun admin sozlashi kerak."
 
+    VIEW_SHEET_TITLE = "Otgruzka (Hisobot)"
     try:
-        ws = sheets_instance.sh.worksheet("Otgruzka")
+        ws = sheets_instance.sh.worksheet(VIEW_SHEET_TITLE)
     except Exception:
-        return "Hali 'Otgruzka' jadvali yo‘q."
+        return f"'{VIEW_SHEET_TITLE}' varagi topilmadi."
 
     rows_all = ws.get_all_values()
     if not rows_all or len(rows_all) < 2:
@@ -358,20 +353,36 @@ async def _report_summary_for(date_str: str) -> str:
 
     headers = rows_all[0]
     rows = rows_all[1:]
-    idx = {h: i for i, h in enumerate(headers)}
-    required = ("time", "type_size", "qty", "pallets", "dest")
-    if not all(k in idx for k in required):
-        return "Jadval sarlavhalari kutilgandek emas. Keraklilar: time/type_size/qty/pallets/dest."
 
+    # kerakli ustunlar indekslari (foydalanuvchi ko‘rinishi)
+    def find_i(name: str) -> int | None:
+        try:
+            return headers.index(name)
+        except ValueError:
+            return None
+
+    i_sana   = find_i("Sana")
+    i_type   = find_i("Granit turi")
+    i_qty    = find_i("Kvadrati")
+    i_pal    = find_i("Paddon soni")
+    # i_dest = find_i("Qayerga ketyapti")  # hozirgi hisobot satrida ko‘rsatmayapmiz, xohlasangiz qo‘shib beraman
+
+    for_need = [i_sana, i_type, i_qty, i_pal]
+    if any(i is None for i in for_need):
+        return ("'Otgruzka (Hisobot)' sarlavhalari kutilgandek emas. Kerakli ustunlar:\n"
+                "Sana, Granit turi, Kvadrati, Paddon soni")
+
+    # faqat kerakli sana (YYYY-MM-DD) bo‘yicha filter
     selected = []
     for r in rows:
-        t = r[idx["time"]] if idx["time"] < len(r) else ""
-        if t[:10] == date_str:
+        ts = r[i_sana] if i_sana < len(r) else ""
+        if ts[:10] == date_str:  # 'YYYY-MM-DD HH:MM' dan kun bo‘yicha filter
             selected.append(r)
 
     if not selected:
         return f"📆 <b>{date_str}</b> uchun yozuv topilmadi."
 
+    # yig‘indilar
     def _float_in_text(s: str) -> float:
         m = re.findall(r"[\d]+(?:[.,]\d+)?", s or "")
         return float(m[0].replace(",", ".")) if m else 0.0
@@ -381,20 +392,20 @@ async def _report_summary_for(date_str: str) -> str:
     total_qty = 0.0
 
     for r in selected:
-        pallets = r[idx["pallets"]] if idx["pallets"] < len(r) else ""
-        qty     = r[idx["qty"]]     if idx["qty"]     < len(r) else ""
+        pallets = r[i_pal] if i_pal < len(r) else ""
+        qty     = r[i_qty] if i_qty < len(r) else ""
         total_pallets += int(pallets) if str(pallets).isdigit() else 0
         total_qty     += _float_in_text(qty)
 
-    # Har bir zakaz: Sana, Soat, type, qty, pallets
+    # satrlar: Sana, Soat, type, qty, pallets
     lines = []
     for r in selected:
-        full_time = r[idx["time"]] if idx["time"] < len(r) else ""
+        full_time = r[i_sana] if i_sana < len(r) else ""
         d = full_time[:10]
         tm = full_time[11:16] if len(full_time) >= 16 else ""
-        tsize = r[idx["type_size"]] if idx["type_size"] < len(r) else ""
-        qty   = r[idx["qty"]] if idx["qty"] < len(r) else ""
-        pal   = r[idx["pallets"]] if idx["pallets"] < len(r) else ""
+        tsize = r[i_type] if i_type < len(r) else ""
+        qty   = r[i_qty] if i_qty < len(r) else ""
+        pal   = r[i_pal] if i_pal < len(r) else ""
         lines.append(f"— {d} {tm} • {tsize} • {qty} • {pal} pod")
 
     header = (
