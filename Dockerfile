@@ -6,6 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends     curl ca-certificates &&     rm -rf /var/lib/apt/lists/*
+# ...
+WORKDIR /app
+
+# pip/setuptools/wheel yangilab oling – yechim topishni osonlashtiradi
+RUN python -m pip install --upgrade pip setuptools wheel
+
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+# ...
 
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
