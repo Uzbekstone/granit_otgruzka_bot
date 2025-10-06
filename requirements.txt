@@ -1,8 +1,12 @@
 aiogram==3.10.0
-fastapi==0.115.2
-uvicorn[standard]==0.30.6
-pydantic==2.9.2
-pydantic-settings==2.6.1
+fastapi>=0.115,<0.116
+uvicorn[standard]>=0.30,<0.31
 loguru==0.7.2
-gspread==6.1.2
-google-auth==2.35.0
+
+# Pydantic stack — aiogram (pydantic<2.9) va FastAPI (>=2.7) bilan mos
+pydantic>=2.7.1,<2.9
+pydantic-settings>=2.6,<2.7
+
+# Google Sheets
+gspread>=6.1,<6.2
+google-auth>=2.27,<3
