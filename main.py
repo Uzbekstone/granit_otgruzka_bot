@@ -25,9 +25,15 @@ router = Router()
 TZ = dt.timezone(dt.timedelta(hours=5))  # Asia/Tashkent (UTC+5)
 
 SHEETS_SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "")
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")          # ixtiyoriy
+GOOGLE_CREDENTIALS_JSON_B64 = os.getenv("GOOGLE_CREDENTIALS_JSON_B64")  # ixtiyoriy
 
-sheets = Sheets(SHEETS_SPREADSHEET_ID, GOOGLE_CREDENTIALS_JSON)
+sheets = Sheets(
+    SHEETS_SPREADSHEET_ID,
+    credentials_json=GOOGLE_CREDENTIALS_JSON,
+    credentials_b64=GOOGLE_CREDENTIALS_JSON_B64,
+)
+
 
 # Keyboards
 main_kb = ReplyKeyboardMarkup(keyboard=[
