@@ -1,5 +1,6 @@
 import asyncio
 import json
+from aiogram.client.default import DefaultBotProperties
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -185,7 +186,11 @@ async def r_30days(message: types.Message):
     await message.answer("📅 Последние 30 дней\n\n" + _fmt_rows(rows))
 
 # Aiogram objects
-bot = Bot(token=settings.TELEGRAM_TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(
+    token=settings.TELEGRAM_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+)
+
 dp = Dispatcher()
 dp.include_router(router)
 
