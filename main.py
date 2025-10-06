@@ -10,6 +10,7 @@ from loguru import logger
 from aiogram import Bot, Dispatcher, Router, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart, Command  # <— muhim: 3.x filtrlari
 
 from settings import settings  # TELEGRAM_TOKEN, BASE_URL, WEBHOOK_SECRET va b.
 
@@ -36,7 +37,8 @@ bot = Bot(
 dp = Dispatcher()
 router = Router()
 
-@router.message(commands={"start"})
+# ✅ AIROGRAM 3.X USULI: CommandStart() yoki Command("start")
+@router.message(CommandStart())
 async def cmd_start(message: types.Message):
     await message.answer(
         "👋 Salom! Bot ishga tushdi.\n\n"
@@ -46,6 +48,11 @@ async def cmd_start(message: types.Message):
         "• 🗓️ Отчет: Позавчера\n"
         "• 📅 Отчет: 30 дней"
     )
+
+# (xohlasangiz /help ham)
+@router.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer("Yordam: /start — menyu, /help — yordam.")
 
 dp.include_router(router)
 
