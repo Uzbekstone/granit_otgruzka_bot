@@ -7,13 +7,12 @@ import json
 import random
 import string
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo  # ✅ mahalliy vaqt uchun
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 
-# aiogram 3.10 importlar
 from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -24,14 +23,14 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from settings import settings  # TELEGRAM_TOKEN, BASE_URL, WEBHOOK_SECRET
 
-# ✅ Timezone: env yoki default Asia/Tashkent
+# ===== Timezone (mahalliy vaqt) =====
 LOCAL_TZ_NAME = os.getenv("LOCAL_TZ", "Asia/Tashkent")
 LOCAL_TZ = ZoneInfo(LOCAL_TZ_NAME)
 
-# (ixtiyoriy) Sheets
+# ===== Google Sheets (ixtiyoriy) =====
 sheets_instance = None
 try:
-    from sheets_client import Sheets  # Sheets(spreadsheet_id, credentials_json=None, credentials_b64=None)
+    from sheets_client import Sheets
     SHEETS_SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "")
     GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
     GOOGLE_CREDENTIALS_JSON_B64 = os.getenv("GOOGLE_CREDENTIALS_JSON_B64")
@@ -41,9 +40,7 @@ except Exception:
     GOOGLE_CREDENTIALS_JSON = None
     GOOGLE_CREDENTIALS_JSON_B64 = None
 
-# -------------------------------
-# FastAPI + healthcheck
-# -------------------------------
+# ===== FastAPI =====
 app = FastAPI()
 
 @app.get("/", response_class=PlainTextResponse)
@@ -51,9 +48,7 @@ app = FastAPI()
 def health():
     return "ok"
 
-# -------------------------------
-# Aiogram: bot, dp, router
-# -------------------------------
+# ===== Aiogram =====
 bot = Bot(
     token=settings.TELEGRAM_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -61,13 +56,11 @@ bot = Bot(
 dp = Dispatcher()
 router = Router()
 
-# -------------------------------
-# Klaviaturalar
-# -------------------------------
+# ===== Keyboards =====
 def main_menu():
     kb = InlineKeyboardBuilder()
     kb.button(text="🚚 Отгрузка", callback_data="ship")
-    kb.button(text="📆 Отчет: Сегодня", callback_data="rpt:today")   # Bugungi hisobot
+    kb.button(text="📆 Отчет: Сегодня", callback_data="rpt:today")
     kb.button(text="📊 Отчет: Вчера", callback_data="rpt:yesterday")
     kb.button(text="🗓️ Отчет: Позавчера", callback_data="rpt:prev")
     kb.button(text="📅 Отчет: 30 дней", callback_data="rpt:30")
@@ -87,9 +80,7 @@ def cancel_menu():
     kb.adjust(1)
     return kb.as_markup()
 
-# -------------------------------
-# Holatlar (FSM) — Отгрузка
-# -------------------------------
+# ===== FSM (Отгрузка) =====
 class ShipForm(StatesGroup):
     type_size = State()
     qty = State()
@@ -101,14 +92,11 @@ class ShipForm(StatesGroup):
     loader = State()
     confirm = State()
 
-# -------------------------------
-# /start, /help
-# -------------------------------
+# ===== Commands =====
 @router.message(CommandStart())
 async def cmd_start(message: types.Message):
     await message.answer(
-        "👋 Salom! Bot ishga tushdi.\n\n"
-        "<b>Menyu</b>dan bo‘lim tanlang:",
+        "👋 Salom! Bot ishga tushdi.\n\n<b>Menyu</b>dan bo‘lim tanlang:",
         reply_markup=main_menu(),
     )
 
@@ -116,9 +104,7 @@ async def cmd_start(message: types.Message):
 async def cmd_help(message: types.Message):
     await message.answer("Yordam: /start — menyu, 🚚 Отгрузка — yangi yozuv, hisobot tugmalari — ko‘rish.")
 
-# -------------------------------
-# Отгрузка bosqichlari
-# -------------------------------
+# ===== Отгрузка oqimi =====
 @router.callback_query(F.data == "ship")
 async def ship_start(cb: types.CallbackQuery, state: FSMContext):
     await state.clear()
@@ -148,19 +134,13 @@ async def ship_qty(message: types.Message, state: FSMContext):
 async def ship_pallets(message: types.Message, state: FSMContext):
     await state.update_data(pallets=int(message.text))
     await state.set_state(ShipForm.dest)
-    await message.answer(
-        "4) <b>Qayerga ketayapti</b> — viloyat / respublika / joy nomi yozing.",
-        reply_markup=cancel_menu(),
-    )
+    await message.answer("4) <b>Qayerga ketayapti</b> — viloyat / respublika / joy nomi yozing.", reply_markup=cancel_menu())
 
 @router.message(ShipForm.dest, F.text.len() > 2)
 async def ship_dest(message: types.Message, state: FSMContext):
     await state.update_data(dest=message.text.strip())
     await state.set_state(ShipForm.driver)
-    await message.answer(
-        "5) <b>Haydovchi telefon raqami</b>ni kiriting (faqat raqamlar, + bilan ham bo‘lishi mumkin).",
-        reply_markup=cancel_menu(),
-    )
+    await message.answer("5) <b>Haydovchi telefon raqami</b>ni kiriting (faqat raqamlar, + ham bo‘lishi mumkin).", reply_markup=cancel_menu())
 
 PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 
@@ -173,8 +153,7 @@ async def ship_driver(message: types.Message, state: FSMContext):
     await state.update_data(driver=txt)
     await state.set_state(ShipForm.photos)
     await message.answer(
-        "6) <b>3–4 dona mashina fotosi</b>ni yuboring (ketma-ket).\n"
-        "Hamma rasmlarni yuborgach, <b>➡️ Далее</b> tugmasini bosing.",
+        "6) <b>3–4 dona mashina fotosi</b>ni yuboring (ketma-ket).\nYuborib bo‘lgach, <b>➡️ Далее</b> ni bosing.",
         reply_markup=next_cancel_menu(),
     )
 
@@ -182,11 +161,11 @@ async def ship_driver(message: types.Message, state: FSMContext):
 async def ship_photos_collect(message: types.Message, state: FSMContext):
     data = await state.get_data()
     photos = list(data.get("photos", []))
-    file_id = message.photo[-1].file_id
+    fid = message.photo[-1].file_id
     if len(photos) >= 4:
         await message.answer("Allaqachon 4 ta foto olindi. <b>➡️ Далее</b> ni bosing.", reply_markup=next_cancel_menu())
         return
-    photos.append(file_id)
+    photos.append(fid)
     await state.update_data(photos=photos)
     await message.answer(f"Foto qabul qilindi ✅  ({len(photos)}/4). Yana yuborishingiz mumkin yoki ➡️ Далее.")
 
@@ -208,7 +187,6 @@ async def ship_price(message: types.Message, state: FSMContext):
 
 @router.message(ShipForm.loader, F.text)
 async def ship_loader(message: types.Message, state: FSMContext):
-    # ✅ Sana/soatni mahalliy vaqt bo‘yicha yozamiz
     local_now = datetime.now(LOCAL_TZ)
     await state.update_data(loader=message.text.strip(), ts=local_now.strftime("%Y-%m-%d %H:%M"))
 
@@ -236,11 +214,9 @@ async def ship_loader(message: types.Message, state: FSMContext):
 async def ship_save(cb: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    # Unikal order_id
     rand = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
     order_id = f"{data.get('ts').replace(' ', '_')}_{rand}"
 
-    # Asosiy row (Otgruzka)
     main_row = [
         order_id,
         data.get("ts"),
@@ -254,13 +230,11 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
         cb.from_user.full_name,
     ]
 
-    # Photos jadvali (file_id lar)
     file_ids = data.get("photos", [])
     p_row = [order_id] + [file_ids[i] if i < len(file_ids) else "" for i in range(4)]
 
     try:
         if Sheets and SHEETS_SPREADSHEET_ID and sheets_instance:
-            # 1) Otgruzka
             try:
                 ws_main = sheets_instance.sh.worksheet("Otgruzka")
             except Exception:
@@ -271,7 +245,6 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
                 ])
             ws_main.append_row(main_row)
 
-            # 2) Photos
             try:
                 ws_ph = sheets_instance.sh.worksheet("Photos")
             except Exception:
@@ -281,10 +254,7 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
 
             await cb.message.edit_text("✅ Yozuv saqlandi. Rahmat!", reply_markup=main_menu())
         else:
-            await cb.message.edit_text(
-                "⚠️ Sheets ulanmagan. Admin sozlamalarini tekshiring.",
-                reply_markup=main_menu(),
-            )
+            await cb.message.edit_text("⚠️ Sheets ulanmagan. Admin sozlamalarini tekshiring.", reply_markup=main_menu())
     except Exception as e:
         logger.exception("Sheets yozishda xato: {}", e)
         await cb.message.edit_text("❌ Saqlashda xato. Keyinroq urinib ko‘ring.", reply_markup=main_menu())
@@ -298,9 +268,24 @@ async def ship_cancel(cb: types.CallbackQuery, state: FSMContext):
     await cb.message.edit_text("❌ Amal bekor qilindi.", reply_markup=main_menu())
     await cb.answer()
 
-# -------------------------------
-# Hisobotlar
-# -------------------------------
+# ===== Hisobot yordamchilari =====
+def _split_chunks(text: str, limit: int = 3500):
+    """Matnni Telegram cheklovidan oshsa bo‘lib yuborish uchun."""
+    if len(text) <= limit:
+        return [text]
+    parts, buf = [], []
+    current = 0
+    for line in text.splitlines():
+        if current + len(line) + 1 > limit:
+            parts.append("\n".join(buf))
+            buf, current = [line], len(line) + 1
+        else:
+            buf.append(line)
+            current += len(line) + 1
+    if buf:
+        parts.append("\n".join(buf))
+    return parts
+
 async def _report_text(days: int) -> str:
     if not (Sheets and SHEETS_SPREADSHEET_ID and sheets_instance):
         return "⚠️ Sheets ulanmagan. Hisobot uchun admin sozlashi kerak."
@@ -309,8 +294,8 @@ async def _report_text(days: int) -> str:
 
 async def _report_summary_for(date_str: str) -> str:
     """
-    'Otgruzka' varagidan aynan YYYY-MM-DD kuniga tegishli yozuvlarni o'qiydi,
-    sarhisob qaytaradi. Bu versiyada 'Umumiy narx' O'RNIGA 'Yuklagan(lar)' chiqadi.
+    Bugungi hisobot: faqat Zakazlar/Poddon/Hajm yig‘indi
+    va har bir zakaz alohida: Sana, Soat, granit turi, kvadrati, poddon.
     """
     if not (Sheets and SHEETS_SPREADSHEET_ID and sheets_instance):
         return "⚠️ Sheets ulanmagan. Hisobot uchun admin sozlashi kerak."
@@ -327,11 +312,10 @@ async def _report_summary_for(date_str: str) -> str:
     headers = rows_all[0]
     rows = rows_all[1:]
     idx = {h: i for i, h in enumerate(headers)}
-    required = ("time", "type_size", "qty", "pallets", "dest", "loader")
+    required = ("time", "type_size", "qty", "pallets", "dest")  # loader/endilikda kerak emas
     if not all(k in idx for k in required):
-        return "Jadval sarlavhalari kutilgandek emas. Admin tekshirsin: time/type_size/qty/pallets/dest/loader."
+        return "Jadval sarlavhalari kutilgandek emas. Keraklilar: time/type_size/qty/pallets/dest."
 
-    # Faqat shu kun
     selected = []
     for r in rows:
         t = r[idx["time"]] if idx["time"] < len(r) else ""
@@ -348,45 +332,42 @@ async def _report_summary_for(date_str: str) -> str:
     total_orders = len(selected)
     total_pallets = 0
     total_qty = 0.0
-    loaders = []
 
     for r in selected:
         pallets = r[idx["pallets"]] if idx["pallets"] < len(r) else ""
         qty     = r[idx["qty"]]     if idx["qty"]     < len(r) else ""
-        loader  = r[idx["loader"]]  if idx["loader"]  < len(r) else ""
-
         total_pallets += int(pallets) if str(pallets).isdigit() else 0
         total_qty     += _float_in_text(qty)
-        if loader:
-            loaders.append(loader)
 
-    # vitrina: 10 ta satr
+    # Har bir zakaz: Sana, Soat, type, qty, pallets
     lines = []
-    for r in selected[:10]:
-        tm = (r[idx["time"]][11:16] if idx["time"] < len(r) and len(r[idx["time"]]) >= 16 else "")
-        lines.append(
-            f"— {tm} • {r[idx['type_size']]} • {r[idx['qty']]} • {r[idx['pallets']]} pod • {r[idx['dest']]}"
-        )
-    more = ""
-    if len(selected) > 10:
-        more = f"\n… va yana {len(selected) - 10} ta yozuv."
+    for r in selected:
+        full_time = r[idx["time"]] if idx["time"] < len(r) else ""
+        d = full_time[:10]
+        tm = full_time[11:16] if len(full_time) >= 16 else ""
+        tsize = r[idx["type_size"]] if idx["type_size"] < len(r) else ""
+        qty   = r[idx["qty"]] if idx["qty"] < len(r) else ""
+        pal   = r[idx["pallets"]] if idx["pallets"] < len(r) else ""
+        lines.append(f"— {d} {tm} • {tsize} • {qty} • {pal} pod")
 
-    unique_loaders = ", ".join(sorted(set(loaders))) if loaders else "—"
-
-    return (
+    header = (
         f"📆 <b>{date_str}</b> kunlik hisobot\n"
         f"• Zakazlar: <b>{total_orders}</b>\n"
         f"• Poddon: <b>{total_pallets}</b>\n"
-        f"• Hajm yig‘indi: <b>{total_qty:g}</b>\n"
-        f"• Yuklagan(lar): <b>{unique_loaders}</b>\n\n"
-        + "\n".join(lines) + more
+        f"• Hajm yig‘indi: <b>{total_qty:g}</b>\n\n"
     )
+    return header + "\n".join(lines)
 
+# ===== Hisobot handlerlari =====
 @router.callback_query(F.data == "rpt:today")
 async def report_today(cb: types.CallbackQuery):
-    today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")  # ✅ mahalliy sana
+    today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
     text = await _report_summary_for(today)
-    await cb.message.edit_text(text, reply_markup=main_menu())
+    chunks = _split_chunks(text)
+    # birinchi bo‘lakni edit, qolganlarini alohida yuboramiz
+    await cb.message.edit_text(chunks[0], reply_markup=main_menu())
+    for part in chunks[1:]:
+        await cb.message.answer(part)
     await cb.answer()
 
 @router.callback_query(F.data == "rpt:yesterday")
@@ -407,12 +388,10 @@ async def report_30(cb: types.CallbackQuery):
     await cb.message.edit_text(text, reply_markup=main_menu())
     await cb.answer()
 
-# Routerni ulaymiz
+# ===== Routerni ulash =====
 dp.include_router(router)
 
-# -------------------------------
-# Webhook endpoint
-# -------------------------------
+# ===== Webhook =====
 @app.post("/webhook/{secret}")
 async def tg_webhook(secret: str, request: Request):
     if secret != settings.WEBHOOK_SECRET:
@@ -424,9 +403,7 @@ async def tg_webhook(secret: str, request: Request):
     await dp.feed_webhook_update(bot, update_dict)
     return {"ok": True}
 
-# -------------------------------
-# Startup / Shutdown
-# -------------------------------
+# ===== Startup/Shutdown =====
 @app.on_event("startup")
 async def on_startup():
     base = str(settings.BASE_URL).rstrip("/")
@@ -435,7 +412,6 @@ async def on_startup():
     await bot.set_webhook(url=webhook_url, drop_pending_updates=True)
     logger.info("Webhook set successfully.")
 
-    # Sheetsga ulanish
     global sheets_instance
     if Sheets and SHEETS_SPREADSHEET_ID:
         try:
