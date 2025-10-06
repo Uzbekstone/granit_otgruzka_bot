@@ -203,7 +203,9 @@ async def health():
 
 @app.on_event("startup")
 async def on_startup():
-    webhook_url = f"{settings.BASE_URL}/webhook/{settings.WEBHOOK_SECRET}"
+    # BASE_URL oxiridagi '/' ni olib tashlaymiz (agar bo'lsa)
+    base = str(settings.BASE_URL).rstrip('/')
+    webhook_url = f"{base}/webhook/{settings.WEBHOOK_SECRET}"
     logger.info(f"Setting webhook to: {webhook_url}")
     await bot.set_webhook(url=webhook_url, drop_pending_updates=True)
     logger.info("Webhook set successfully.")
@@ -213,9 +215,12 @@ async def on_shutdown():
     logger.info("Shutting down...")
 
 @app.post("/webhook/{secret}")
-async def telegram_webhook(secret: str, request: Request):
+async def tg_webhook(secret: str, request: Request):
     if secret != settings.WEBHOOK_SECRET:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=403)
+    update = await request.body()
+    await dp.feed_webhook_update(bot, update)
+    return {"ok": True}
     try:
         body = await request.body()
         update = Update.model_validate_json(body)
