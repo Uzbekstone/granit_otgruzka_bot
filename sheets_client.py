@@ -1,4 +1,4 @@
-import json
+import json, os, base64
 import datetime as dt
 from typing import Any, List
 import gspread
@@ -10,11 +10,17 @@ SCOPES = [
 ]
 
 class Sheets:
-    def __init__(self, spreadsheet_id: str, credentials_json: str):
-        creds = Credentials.from_service_account_info(json.loads(credentials_json), scopes=SCOPES)
+    def __init__(self, spreadsheet_id: str, credentials_json: str | None = None, credentials_b64: str | None = None):
+        if credentials_b64:
+            raw = base64.b64decode(credentials_b64).decode("utf-8")
+        else:
+            raw = credentials_json or ""
+        info = json.loads(raw)
+        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         gc = gspread.authorize(creds)
         self.sh = gc.open_by_key(spreadsheet_id)
         self.ws_data = self._get_or_create_ws("Otgruzka")
+
 
     def _get_or_create_ws(self, title: str):
         try:
