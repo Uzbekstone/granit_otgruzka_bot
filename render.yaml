@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: telegram-bot-service
+    env: docker
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: ENV
+        value: production
+      - key: SHEETS_SPREADSHEET_ID
+        sync: false
+      - key: GOOGLE_CREDENTIALS_JSON
+        sync: false
