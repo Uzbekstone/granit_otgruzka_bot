@@ -19,6 +19,12 @@ from utils_translit import latin_to_cyr
 from sheets_client import Sheets
 import datetime as dt
 import os
+from fastapi.responses import PlainTextResponse
+
+@app.get("/", response_class=PlainTextResponse)
+@app.head("/", response_class=PlainTextResponse)
+def health():
+    return "ok"
 
 # Router for handlers
 router = Router()
