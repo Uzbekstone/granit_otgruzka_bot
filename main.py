@@ -235,6 +235,7 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
 
     try:
         if Sheets and SHEETS_SPREADSHEET_ID and sheets_instance:
+            # 1) Otgruzka
             try:
                 ws_main = sheets_instance.sh.worksheet("Otgruzka")
             except Exception:
@@ -245,12 +246,59 @@ async def ship_save(cb: types.CallbackQuery, state: FSMContext):
                 ])
             ws_main.append_row(main_row)
 
+            # 2) Photos
             try:
                 ws_ph = sheets_instance.sh.worksheet("Photos")
             except Exception:
                 ws_ph = sheets_instance.sh.add_worksheet(title="Photos", rows=1, cols=10)
                 ws_ph.append_row(["order_id", "file1", "file2", "file3", "file4"])
             ws_ph.append_row(p_row)
+
+            # === 3) Otgruzka (Hisobot) — foydalanuvchi ko‘rinishi ===
+            # Tartib: Sana | Granit turi | Kvadrati | Paddon soni | Qayerga ketyapti |
+            #         Haydovchi raqami | Foto surat | Yetkazish summasi | Kim yukladi
+            VIEW_SHEET_TITLE = "Otgruzka (Hisobot)"
+            desired_header = [
+                "Sana",
+                "Granit turi",
+                "Kvadrati",
+                "Paddon soni",
+                "Qayerga ketyapti",
+                "Haydovchi raqami",
+                "Foto surat",
+                "Yetkazish summasi",
+                "Kim yukladi",
+            ]
+
+            try:
+                ws_view = sheets_instance.sh.worksheet(VIEW_SHEET_TITLE)
+            except Exception:
+                ws_view = sheets_instance.sh.add_worksheet(title=VIEW_SHEET_TITLE, rows=1, cols=20)
+                ws_view.append_row(desired_header)
+
+            # birinchi qatordagi sarlavhani tekshirib, kerak bo‘lsa to‘g‘rilab qo‘yamiz
+            try:
+                first_row = ws_view.row_values(1)
+                if first_row != desired_header:
+                    ws_view.delete_rows(1)
+                    ws_view.insert_rows([desired_header], 1)
+            except Exception:
+                pass
+
+            photo_cell = " ".join([fid for fid in file_ids if fid])
+
+            view_row = [
+                data.get("ts"),             # Sana (mahalliy tz)
+                data.get("type_size"),      # Granit turi
+                data.get("qty"),            # Kvadrati/uzunligi
+                str(data.get("pallets")),   # Paddon soni
+                data.get("dest"),           # Qayerga ketyapti
+                data.get("driver"),         # Haydovchi raqami
+                photo_cell,                 # Foto file_id lar bitta katakda
+                data.get("price"),          # Yetkazish summasi
+                data.get("loader"),         # Kim yukladi
+            ]
+            ws_view.append_row(view_row)
 
             await cb.message.edit_text("✅ Yozuv saqlandi. Rahmat!", reply_markup=main_menu())
         else:
@@ -270,7 +318,6 @@ async def ship_cancel(cb: types.CallbackQuery, state: FSMContext):
 
 # ===== Hisobot yordamchilari =====
 def _split_chunks(text: str, limit: int = 3500):
-    """Matnni Telegram cheklovidan oshsa bo‘lib yuborish uchun."""
     if len(text) <= limit:
         return [text]
     parts, buf = [], []
@@ -312,7 +359,7 @@ async def _report_summary_for(date_str: str) -> str:
     headers = rows_all[0]
     rows = rows_all[1:]
     idx = {h: i for i, h in enumerate(headers)}
-    required = ("time", "type_size", "qty", "pallets", "dest")  # loader/endilikda kerak emas
+    required = ("time", "type_size", "qty", "pallets", "dest")
     if not all(k in idx for k in required):
         return "Jadval sarlavhalari kutilgandek emas. Keraklilar: time/type_size/qty/pallets/dest."
 
@@ -364,7 +411,6 @@ async def report_today(cb: types.CallbackQuery):
     today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
     text = await _report_summary_for(today)
     chunks = _split_chunks(text)
-    # birinchi bo‘lakni edit, qolganlarini alohida yuboramiz
     await cb.message.edit_text(chunks[0], reply_markup=main_menu())
     for part in chunks[1:]:
         await cb.message.answer(part)
