@@ -1,4 +1,4 @@
-# main.py
+# main.py — Otgruzka boti (+ Sana oralig'i hisoboti)
 from __future__ import annotations
 
 import os
@@ -22,11 +22,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from settings import settings  # TELEGRAM_TOKEN, BASE_URL, WEBHOOK_SECRET
 
-# ===== Timezone (mahalliy vaqt) =====
+# ===== Timezone =====
 LOCAL_TZ_NAME = os.getenv("LOCAL_TZ", "Asia/Tashkent")
 LOCAL_TZ = ZoneInfo(LOCAL_TZ_NAME)
 
-# ===== Google Sheets (ixtiyoriy) =====
+# ===== Google Sheets =====
 sheets_instance = None
 try:
     from sheets_client import Sheets
@@ -49,8 +49,8 @@ def health():
 
 # ===== Aiogram =====
 bot = Bot(
-        token=settings.TELEGRAM_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    token=settings.TELEGRAM_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
 dp = Dispatcher()
 router = Router()
@@ -63,6 +63,8 @@ def main_menu():
     kb.button(text="📊 Отчет: Вчера", callback_data="rpt:yesterday")
     kb.button(text="🗓️ Отчет: Позавчера", callback_data="rpt:prev")
     kb.button(text="📅 Отчет: 30 дней", callback_data="rpt:30")
+    # Yangi tugma — Sana oralig'i
+    kb.button(text="📆 Sana oralig‘i", callback_data="rpt:range")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -79,7 +81,7 @@ def cancel_menu():
     kb.adjust(1)
     return kb.as_markup()
 
-# ===== FSM (Отгрузка) =====
+# ===== FSM: Отгрузка =====
 class ShipForm(StatesGroup):
     type_size = State()
     qty = State()
@@ -90,6 +92,11 @@ class ShipForm(StatesGroup):
     price = State()
     loader = State()
     confirm = State()
+
+# ===== FSM: Sana oralig'i hisobot =====
+class RangeForm(StatesGroup):
+    start = State()
+    end = State()
 
 # ===== Commands =====
 @router.message(CommandStart())
@@ -104,6 +111,8 @@ async def cmd_help(message: types.Message):
     await message.answer("Yordam: /start — menyu, 🚚 Отгрузка — yangi yozuv, hisobot tugmalari — ko‘rish.")
 
 # ===== Отгрузка oqimi =====
+PHONE_RE = re.compile(r"^\+?\d{9,15}$")
+
 @router.callback_query(F.data == "ship")
 async def ship_start(cb: types.CallbackQuery, state: FSMContext):
     await state.clear()
@@ -140,8 +149,6 @@ async def ship_dest(message: types.Message, state: FSMContext):
     await state.update_data(dest=message.text.strip())
     await state.set_state(ShipForm.driver)
     await message.answer("5) <b>Haydovchi telefon raqami</b>ni kiriting (faqat raqamlar, + ham bo‘lishi mumkin).", reply_markup=cancel_menu())
-
-PHONE_RE = re.compile(r"^\+?\d{9,15}$")
 
 @router.message(ShipForm.driver, F.text)
 async def ship_driver(message: types.Message, state: FSMContext):
@@ -309,7 +316,7 @@ async def ship_cancel(cb: types.CallbackQuery, state: FSMContext):
     await cb.message.edit_text("❌ Amal bekor qilindi.", reply_markup=main_menu())
     await cb.answer()
 
-# ===== Hisobot yordamchilari =====
+# ===== Hisobot helperlari =====
 def _split_chunks(text: str, limit: int = 3500):
     if len(text) <= limit:
         return [text]
@@ -334,9 +341,8 @@ async def _report_text(days: int) -> str:
 
 async def _report_summary_for(date_str: str) -> str:
     """
-    HISOBOT ENDI "Otgruzka (Hisobot)" varagidan olinadi.
-    Sarlavha: Zakazlar / Poddon / Hajm yig‘indi
-    Satrlarda: Sana, Soat, Granit turi, Kvadrati, Poddon.
+    'Otgruzka (Hisobot)' varagidan: Zakazlar / Poddon / Hajm yig'indi
+    satrlari: Sana Soat • Granit turi • Kvadrati • Paddon
     """
     if not (Sheets and SHEETS_SPREADSHEET_ID and sheets_instance):
         return "⚠️ Sheets ulanmagan. Hisobot uchun admin sozlashi kerak."
@@ -354,35 +360,31 @@ async def _report_summary_for(date_str: str) -> str:
     headers = rows_all[0]
     rows = rows_all[1:]
 
-    # kerakli ustunlar indekslari (foydalanuvchi ko‘rinishi)
-    def find_i(name: str) -> int | None:
+    def find_i(name: str):
         try:
             return headers.index(name)
         except ValueError:
             return None
 
-    i_sana   = find_i("Sana")
-    i_type   = find_i("Granit turi")
-    i_qty    = find_i("Kvadrati")
-    i_pal    = find_i("Paddon soni")
-    # i_dest = find_i("Qayerga ketyapti")  # hozirgi hisobot satrida ko‘rsatmayapmiz, xohlasangiz qo‘shib beraman
+    i_sana = find_i("Sana")
+    i_type = find_i("Granit turi")
+    i_qty  = find_i("Kvadrati")
+    i_pal  = find_i("Paddon soni")
 
     for_need = [i_sana, i_type, i_qty, i_pal]
     if any(i is None for i in for_need):
-        return ("'Otgruzka (Hisobot)' sarlavhalari kutilgandek emas. Kerakli ustunlar:\n"
-                "Sana, Granit turi, Kvadrati, Paddon soni")
+        return ("'Otgruzka (Hisobot)' sarlavhalari kutilgandek emas. Kerakli ustunlar:"
+                " Sana, Granit turi, Kvadrati, Paddon soni")
 
-    # faqat kerakli sana (YYYY-MM-DD) bo‘yicha filter
     selected = []
     for r in rows:
         ts = r[i_sana] if i_sana < len(r) else ""
-        if ts[:10] == date_str:  # 'YYYY-MM-DD HH:MM' dan kun bo‘yicha filter
+        if ts[:10] == date_str:
             selected.append(r)
 
     if not selected:
         return f"📆 <b>{date_str}</b> uchun yozuv topilmadi."
 
-    # yig‘indilar
     def _float_in_text(s: str) -> float:
         m = re.findall(r"[\d]+(?:[.,]\d+)?", s or "")
         return float(m[0].replace(",", ".")) if m else 0.0
@@ -390,14 +392,12 @@ async def _report_summary_for(date_str: str) -> str:
     total_orders = len(selected)
     total_pallets = 0
     total_qty = 0.0
-
     for r in selected:
         pallets = r[i_pal] if i_pal < len(r) else ""
         qty     = r[i_qty] if i_qty < len(r) else ""
         total_pallets += int(pallets) if str(pallets).isdigit() else 0
         total_qty     += _float_in_text(qty)
 
-    # satrlar: Sana, Soat, type, qty, pallets
     lines = []
     for r in selected:
         full_time = r[i_sana] if i_sana < len(r) else ""
@@ -415,6 +415,85 @@ async def _report_summary_for(date_str: str) -> str:
         f"• Hajm yig‘indi: <b>{total_qty:g}</b>\n\n"
     )
     return header + "\n".join(lines)
+
+# ===== Sana oralig'i hisobot =====
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+def _parse_float_text(s: str) -> float:
+    m = re.findall(r"[\d]+(?:[.,]\d+)?", s or "")
+    return float(m[0].replace(",", ".")) if m else 0.0
+
+async def _report_range(date_from: str, date_to: str) -> str:
+    """
+    Manba: 'Otgruzka (Hisobot)' varagi
+    Ustunlar: Sana | Granit turi | Kvadrati | Paddon soni | ...
+    """
+    if not (Sheets and SHEETS_SPREADSHEET_ID and sheets_instance):
+        return "⚠️ Sheets ulanmagan. Hisobot uchun admin sozlashi kerak."
+
+    try:
+        ws = sheets_instance.sh.worksheet("Otgruzka (Hisobot)")
+    except Exception:
+        return "'Otgruzka (Hisobot)' varagi topilmadi."
+
+    rows_all = ws.get_all_values()
+    if not rows_all or len(rows_all) < 2:
+        return f"📆 {date_from} — {date_to} oralig‘ida yozuv topilmadi."
+
+    headers = rows_all[0]
+    rows = rows_all[1:]
+
+    def find_i(name: str):
+        try:
+            return headers.index(name)
+        except ValueError:
+            return None
+
+    i_sana = find_i("Sana")
+    i_type = find_i("Granit turi")
+    i_qty  = find_i("Kvadrati")
+    i_pal  = find_i("Paddon soni")
+
+    if None in (i_sana, i_type, i_qty, i_pal):
+        return ("'Otgruzka (Hisobot)' sarlavhalari kutilgandek emas. "
+                "Kerakli ustunlar: Sana, Granit turi, Kvadrati, Paddon soni")
+
+    selected = []
+    for r in rows:
+        ts = r[i_sana] if i_sana < len(r) else ""
+        d = ts[:10]
+        if DATE_RE.match(d) and (date_from <= d <= date_to):
+            selected.append(r)
+
+    if not selected:
+        return f"📆 {date_from} — {date_to} oralig‘ida yozuv topilmadi."
+
+    total_orders = len(selected)
+    total_pallets = 0
+    total_qty = 0.0
+    for r in selected:
+        pal = r[i_pal] if i_pal < len(r) else ""
+        qty = r[i_qty] if i_qty < len(r) else ""
+        total_pallets += int(pal) if str(pal).isdigit() else 0
+        total_qty     += _parse_float_text(qty)
+
+    lines = []
+    for r in selected:
+        full_time = r[i_sana] if i_sana < len(r) else ""
+        d = full_time[:10]
+        tm = full_time[11:16] if len(full_time) >= 16 else ""
+        tsize = r[i_type] if i_type < len(r) else ""
+        qty   = r[i_qty] if i_qty < len(r) else ""
+        pal   = r[i_pal] if i_pal < len(r) else ""
+        lines.append(f"— {d} {tm} • {tsize} • {qty} • {pal} pod")
+
+    header = (
+        f"📆 <b>{date_from}</b> — <b>{date_to}</b> oralig‘i hisobot\n"
+        f"• Zakazlar: <b>{total_orders}</b>\n"
+        f"• Poddon: <b>{total_pallets}</b>\n"
+        f"• Hajm yig‘indi: <b>{total_qty:g}</b>\n"
+    )
+    return header + "\n\n" + "\n".join(lines)
 
 # ===== Hisobot handlerlari =====
 @router.callback_query(F.data == "rpt:today")
@@ -444,6 +523,47 @@ async def report_30(cb: types.CallbackQuery):
     text = await _report_text(30)
     await cb.message.edit_text(text, reply_markup=main_menu())
     await cb.answer()
+
+# === Sana oralig'i: boshlash ===
+@router.callback_query(F.data == "rpt:range")
+async def rpt_range_start(cb: types.CallbackQuery, state: FSMContext):
+    await state.set_state(RangeForm.start)
+    await cb.message.edit_text(
+        "Boshlanish sanasini kiriting (format: <b>YYYY-MM-DD</b>, masalan 2025-10-01):",
+        reply_markup=cancel_menu()
+    )
+    await cb.answer()
+
+@router.message(RangeForm.start, F.text)
+async def rpt_range_set_start(message: types.Message, state: FSMContext):
+    d = (message.text or "").strip()
+    if not DATE_RE.match(d):
+        await message.answer("Format noto‘g‘ri. Masalan: <code>2025-10-01</code>")
+        return
+    await state.update_data(date_from=d)
+    await state.set_state(RangeForm.end)
+    await message.answer("Tugash sanasini kiriting (format: <b>YYYY-MM-DD</b>):", reply_markup=cancel_menu())
+
+@router.message(RangeForm.end, F.text)
+async def rpt_range_show(message: types.Message, state: FSMContext):
+    d2 = (message.text or "").strip()
+    if not DATE_RE.match(d2):
+        await message.answer("Format noto‘g‘ri. Masalan: <code>2025-10-07</code>")
+        return
+
+    data = await state.get_data()
+    d1 = data.get("date_from")
+    if d1 > d2:
+        await message.answer("Boshlanish sana tugash sanadan katta bo‘lmasligi kerak. Qaytadan urinib ko‘ring.")
+        return
+
+    text = await _report_range(d1, d2)
+    parts = _split_chunks(text)
+    await message.answer(parts[0], reply_markup=main_menu())
+    for p in parts[1:]:
+        await message.answer(p)
+
+    await state.clear()
 
 # ===== Routerni ulash =====
 dp.include_router(router)
